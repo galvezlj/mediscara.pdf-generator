@@ -4,12 +4,14 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import ClassVar, List
 
+from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 from reportlab.lib.pagesizes import A4 as RL_A4
 from reportlab.lib.pagesizes import A3 as RL_A3
 from reportlab.lib.pagesizes import A2 as RL_A2
 from reportlab.lib.styles import ParagraphStyle
-from reportlab.platypus import Paragraph as RL_Paragraph
+from reportlab.platypus import Paragraph as RL_Paragraph, TableStyle
+from reportlab.platypus import Table as RL_Table
 
 from dacite import from_dict
 
@@ -23,6 +25,11 @@ class PDFObject(ABC):
         RIGHT = 'right'
         CENTER = 'center'
 
+    @classmethod
+    @abstractmethod
+    def from_yaml(cls, yaml_file: dict):
+        pass
+
 
 @dataclass
 class Margin(PDFObject):
@@ -32,6 +39,10 @@ class Margin(PDFObject):
     right: int = field(default=16)
     top: int = field(default=16)
     bottom: int = field(default=16)
+
+    @classmethod
+    def from_yaml(cls, yaml_file: dict):
+        pass
 
 
 @dataclass
@@ -45,6 +56,10 @@ class Sheet(PDFObject):
 
     margin: Margin = field(default=Margin())
     size: str = field(default='A4')
+
+    @classmethod
+    def from_yaml(cls, yaml_file: dict):
+        return from_dict(data_class=cls, data=yaml_file)
 
     @property
     def size_tuple(self):
@@ -75,6 +90,10 @@ class Paragraph(Renderable):
     def __post_init__(self):
         self.space_before = self.size // 3
 
+    @classmethod
+    def from_yaml(cls, yaml_file: dict):
+        return from_dict(data_class=cls, data=yaml_file)
+
     def generate(self, flowable_list: List):
         # create the paragraph style
         style = ParagraphStyle(name=self.alignment,
@@ -99,6 +118,47 @@ class Paragraph(Renderable):
 
 
 @dataclass
+class Table(Renderable):
+    key = 'table'
+
+    @dataclass
+    class Row:
+        text: str = field(default='')
+
+    rows: List[List[str]] = field(default_factory=list)
+
+    @classmethod
+    def from_yaml(cls, yaml_file: dict):
+        rows = yaml_file.get('rows')
+
+        assert isinstance(rows, list)
+
+        result = cls()
+
+        for row in rows:
+            assert isinstance(row, dict)
+            cols = row.get('row')
+            assert isinstance(cols, list)
+            r = list()
+            for col in cols:
+                assert isinstance(col, dict)
+                r.append(col.get('text'))
+
+            result.rows.append(r)
+
+        return result
+
+    def generate(self, flowable_list: List):
+        t = RL_Table(self.rows)
+
+        t.setStyle(TableStyle(
+            [('BOX', (0, 0), (-1, -1), 0.25, colors.black)]
+        ))
+
+        flowable_list.append(t)
+
+
+@dataclass
 class PDF(PDFObject):
     key = 'pdf'
 
@@ -119,18 +179,32 @@ class PDF(PDFObject):
         assert isinstance(root, dict)
         for key, value in root.items():
             if key == cls.sheet.key:
-                result.sheet = from_dict(data_class=Sheet, data=value)
+                result.sheet = Sheet.from_yaml(value)
 
             elif key == 'content':
                 assert isinstance(value, list)
 
                 for dictionary in value:
+
+                    # region Paragraph
                     element = dictionary.get(Paragraph.key)
 
                     if element is not None:
-                        result.content.append(from_dict(data_class=Paragraph, data=element))
+                        result.content.append(Paragraph.from_yaml(element))
+                        continue
 
-                    else:
-                        logging.warning(f"Invalid yaml element: {dictionary}")
+                    # endregion
+
+                    # region Table
+
+                    element = dictionary.get(Table.key)
+
+                    if element is not None:
+                        result.content.append(Table.from_yaml(element))
+                        continue
+
+                    # endregion
+
+                    logging.warning(f"Invalid yaml element: {dictionary}")
 
         return result
