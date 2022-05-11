@@ -18,7 +18,7 @@ def render(file_name:str, pdf: PDF) -> bool:
                             bottomMargin=pdf.sheet.margin.bottom
                             )
 
-    content = pdf.generate()
+    content = pdf.render()
 
     try:
         doc.build(content)

@@ -6,7 +6,7 @@ from typing import ClassVar, List, Tuple
 
 from dacite import from_dict
 from reportlab.lib import colors
-from reportlab.lib.colors import Color, HexColor
+from reportlab.lib.colors import HexColor
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 from reportlab.lib.pagesizes import A2 as RL_A2
 from reportlab.lib.pagesizes import A3 as RL_A3
@@ -82,9 +82,22 @@ class Sheet(PDFObject):
 @dataclass
 class Renderable(PDFObject, ABC):
     """Base class for all renderable PDF objects"""
+
+    parent: PDFObject = field(default=None)
     
     space_before: int = field(default=4)
     space_after: int = field(default=4)
+
+    def render(self, flowable_list: List):
+        if isinstance(self.parent, PDF):
+            flowable_list.append(Spacer(width=0, height=self.space_before))
+
+            self.generate(flowable_list)
+
+            flowable_list.append(Spacer(width=0, height=self.space_after))
+
+        else:
+            self.generate(flowable_list)
 
     @abstractmethod
     def generate(self, flowable_list: List):
@@ -116,9 +129,7 @@ class Paragraph(Renderable):
         style = ParagraphStyle(name=self.alignment,
                                alignment=self.rl_alignment,
                                fontSize=self.size,
-                               fontName=Paragraph.font,
-                               spaceBefore=self.space_before,
-                               spaceAfter=self.space_after
+                               fontName=Paragraph.font
                                )
         flowable_list.append(RL_Paragraph(self.text, style))
 
@@ -182,14 +193,18 @@ class Table(Renderable):
                 resource = col.get(Table.Cell.key)
 
                 if resource is not None:
-                    r.append(Table.Cell.from_yaml(resource))
+                    cell = Table.Cell.from_yaml(resource)
+                    cell.parent = result
+                    r.append(cell)
                     continue
 
                 resource = col.get(Image.key)
 
                 if resource is not None:
                     assert isinstance(resource, dict)
-                    Image.from_yaml(resource).generate(r)
+                    img = Image.from_yaml(resource)
+                    img.parent = result
+                    img.generate(r)
                     continue
 
             result.rows.append(r)
@@ -197,9 +212,6 @@ class Table(Renderable):
         return result
 
     def generate(self, flowable_list: List):
-        spacer = Spacer(width=10*inch, height=self.space_before)
-        flowable_list.append(spacer)
-
         table_data = list()
         background_colors = list()
 
@@ -310,7 +322,9 @@ class PDF(PDFObject):
                     element = dictionary.get(Paragraph.key)
 
                     if element is not None:
-                        result.content.append(Paragraph.from_yaml(element))
+                        p = Paragraph.from_yaml(element)
+                        p.parent = result
+                        result.content.append(p)
                         continue
 
                     # endregion
@@ -320,7 +334,9 @@ class PDF(PDFObject):
                     element = dictionary.get(Table.key)
 
                     if element is not None:
-                        result.content.append(Table.from_yaml(element))
+                        t = Table.from_yaml(element)
+                        t.parent = result
+                        result.content.append(t)
                         continue
 
                     # endregion
@@ -330,7 +346,9 @@ class PDF(PDFObject):
                     element = dictionary.get(Image.key)
 
                     if element is not None:
-                        result.content.append(Image.from_yaml(element))
+                        i = Image.from_yaml(element)
+                        i.parent = result
+                        result.content.append(i)
                         continue
 
                     # endregion
@@ -352,7 +370,7 @@ class PDF(PDFObject):
 
         return result
 
-    def generate(self) -> List:
+    def render(self) -> List:
         Paragraph.font = self.sheet.font
         Table.font = self.sheet.font
 
@@ -361,6 +379,6 @@ class PDF(PDFObject):
         for element in self.content:
             assert isinstance(element, Renderable)
 
-            element.generate(content)
+            element.render(content)
 
         return content
