@@ -6,6 +6,7 @@ from typing import ClassVar, List, Tuple
 
 from dacite import from_dict
 from reportlab.lib import colors
+from reportlab.lib.colors import Color, HexColor
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 from reportlab.lib.pagesizes import A2 as RL_A2
 from reportlab.lib.pagesizes import A3 as RL_A3
@@ -144,39 +145,44 @@ class Table(Renderable):
     class Row:
         resource: str = field(default='')
 
+    @dataclass
+    class Cell(PDFObject):
+        key = 'cell'
+
+        text: str = field(default="")
+        background_color: str = field(default="0xFFFFFF")
+
+        @classmethod
+        def from_yaml(cls, yaml_like: dict):
+            return from_dict(data_class=cls, data=yaml_like)
+
     border: bool = field(default=False)
-    rows: List[List[RL_Paragraph or RL_Image]] = field(default_factory=list)
+    header: bool = field(default=False)  # if true, the first row is the header
+    rows: List = field(default_factory=list)
+    grid: bool = field(default=False)
 
     @classmethod
     def from_yaml(cls, yaml_like: dict):
-        result = cls()
-
-        sp_before = yaml_like.get('space_before')
-        sp_after = yaml_like.get("space_after")
-
-        if sp_before is not None:
-            result.space_before = sp_before
-
-        if sp_after is not None:
-            result.space_after = sp_after
-
-        result.border = yaml_like.get('border')
+        result = from_dict(data_class=cls, data=yaml_like)  # get the non-nested fields
+        result.rows = []  # override rows
 
         rows = yaml_like.get('rows')
 
         assert isinstance(rows, list)
 
-        for row in rows:
+        for row in rows:  # get the dictionary of a row
             assert isinstance(row, dict)
-            cols = row.get('row')
+            cols = row.get('row')  # get the list of dictionaries from the row
+
             assert isinstance(cols, list)
             r = list()
+
             for col in cols:
                 assert isinstance(col, dict)
-                resource = col.get('text')
+                resource = col.get(Table.Cell.key)
 
                 if resource is not None:
-                    r.append(resource)
+                    r.append(Table.Cell.from_yaml(resource))
                     continue
 
                 resource = col.get(Image.key)
@@ -194,12 +200,39 @@ class Table(Renderable):
         spacer = Spacer(width=10*inch, height=self.space_before)
         flowable_list.append(spacer)
 
-        t = RL_Table(self.rows)
+        table_data = list()
+        background_colors = list()
+
+        for i, row in enumerate(self.rows):
+            background_colors.append(list())
+            table_data.append(list())
+            for cell in row:
+                if isinstance(cell, Table.Cell):
+                    background_colors[i].append(cell.background_color)
+                    table_data[i].append(cell.text)
+
+                else:
+                    table_data[i].append(cell)
+
+        t = RL_Table(table_data)
 
         style_args = [("FONTNAME", (0, 0), (-1, -1), self.font)]
 
+        # set background colors
+        for i, row in enumerate(background_colors):
+            for j, color in enumerate(row):
+                if color != "0xFFFFFF":
+                    style_args.append(("BACKGROUND", (j, i), (j, i), HexColor(color)))
+
+        if self.header:
+            style_args.append(("LINEBELOW", (0, 0), (-1, 0), 1, colors.black))  # add a line below the first row
+            style_args.append(("BACKGROUND", (0, 0), (-1, -0), colors.lightgrey))  # add grey background
+
+        if self.grid:
+            style_args.append(("GRID", (0, 0), (-1, -1), 0.25, colors.grey))
+
         if self.border:
-            style_args.append(('BOX', (0, 0), (-1, -1), 0.25, colors.black))
+            style_args.append(('BOX', (0, 0), (-1, -1), 0.5, colors.black))
 
         t.setStyle(style_args)
 
@@ -221,9 +254,6 @@ class Image(Renderable):
         return from_dict(data_class=cls, data=yaml_like)
 
     def generate(self, flowable_list: List):
-        spacer = Spacer(width=0, height=self.space_before)
-        flowable_list.append(spacer)
-
         img = RL_Image(self.resource, self.width, self.height)
         img.hAlign = self.alignment.upper()
 
