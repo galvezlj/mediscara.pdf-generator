@@ -18,12 +18,8 @@ def render(file_name:str, pdf: PDF) -> bool:
                             bottomMargin=pdf.sheet.margin.bottom
                             )
 
-    content = []
+    content = pdf.generate()
 
-    for element in pdf.content:
-        assert isinstance(element, Renderable)
-
-        element.generate(content)
     try:
         doc.build(content)
         return True

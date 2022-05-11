@@ -2,21 +2,20 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from os import path
 from typing import ClassVar, List, Tuple
 
+from dacite import from_dict
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
-from reportlab.lib.pagesizes import A4 as RL_A4
-from reportlab.lib.pagesizes import A3 as RL_A3
 from reportlab.lib.pagesizes import A2 as RL_A2
+from reportlab.lib.pagesizes import A3 as RL_A3
+from reportlab.lib.pagesizes import A4 as RL_A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import Paragraph as RL_Paragraph, TableStyle, Spacer
-from reportlab.platypus import Table as RL_Table
 from reportlab.platypus import Image as RL_Image
-
-from dacite import from_dict
+from reportlab.platypus import PageBreak as RL_PageBreak
+from reportlab.platypus import Paragraph as RL_Paragraph, Spacer
+from reportlab.platypus import Table as RL_Table
 
 
 @dataclass
@@ -25,7 +24,7 @@ class PDFObject(ABC):
     key: ClassVar[str]
 
     class Alignment(Enum):
-        """Enum class storing information abount horizontal alignment"""
+        """Enum class storing information about horizontal alignment"""
         LEFT = 'left'
         RIGHT = 'right'
         CENTER = 'center'
@@ -65,6 +64,7 @@ class Sheet(PDFObject):
 
     margin: Margin = field(default=Margin())
     size: str = field(default='A4')
+    font: str = field(default='Times-Roman')
 
     @classmethod
     def from_yaml(cls, yaml_like: dict):
@@ -82,8 +82,8 @@ class Sheet(PDFObject):
 class Renderable(PDFObject, ABC):
     """Base class for all renderable PDF objects"""
     
-    space_before: int = field(default=0)
-    space_after: int = field(default=0)
+    space_before: int = field(default=4)
+    space_after: int = field(default=4)
 
     @abstractmethod
     def generate(self, flowable_list: List):
@@ -95,6 +95,8 @@ class Renderable(PDFObject, ABC):
 class Paragraph(Renderable):
     """A paragraph is a simple PDF element that stores text"""
     key = 'paragraph'
+
+    font: ClassVar[str] = field(default="Times-Roman")
 
     alignment: str = field(default=PDFObject.Alignment.LEFT.value)
     size: int = field(default=12)
@@ -113,6 +115,7 @@ class Paragraph(Renderable):
         style = ParagraphStyle(name=self.alignment,
                                alignment=self.rl_alignment,
                                fontSize=self.size,
+                               fontName=Paragraph.font,
                                spaceBefore=self.space_before,
                                spaceAfter=self.space_after
                                )
@@ -135,13 +138,14 @@ class Paragraph(Renderable):
 class Table(Renderable):
     """"""
     key = 'table'
+    font: ClassVar[str] = field(default="Times-Roman")
 
     @dataclass
     class Row:
         resource: str = field(default='')
 
     border: bool = field(default=False)
-    rows: List[List[str]] = field(default_factory=list)
+    rows: List[List[RL_Paragraph or RL_Image]] = field(default_factory=list)
 
     @classmethod
     def from_yaml(cls, yaml_like: dict):
@@ -180,6 +184,7 @@ class Table(Renderable):
                 if resource is not None:
                     assert isinstance(resource, dict)
                     Image.from_yaml(resource).generate(r)
+                    continue
 
             result.rows.append(r)
 
@@ -191,10 +196,12 @@ class Table(Renderable):
 
         t = RL_Table(self.rows)
 
+        style_args = [("FONTNAME", (0, 0), (-1, -1), self.font)]
+
         if self.border:
-            t.setStyle(TableStyle(
-                [('BOX', (0, 0), (-1, -1), 0.25, colors.black)]
-            ))
+            style_args.append(('BOX', (0, 0), (-1, -1), 0.25, colors.black))
+
+        t.setStyle(style_args)
 
         flowable_list.append(t)
 
@@ -208,9 +215,6 @@ class Image(Renderable):
     alignment: str = field(default=PDFObject.Alignment.LEFT.value)
     width: int = field(default=1*inch)
     height: int = field(default=1*inch)
-    
-    def __post_init__(self):
-        self.space_before = self.height // 3
 
     @classmethod
     def from_yaml(cls, yaml_like: dict):
@@ -227,8 +231,20 @@ class Image(Renderable):
 
 
 @dataclass
+class PageBreak(Renderable):
+    key = 'page_break'
+
+    @classmethod
+    def from_yaml(cls, yaml_like: dict):
+        return cls()
+
+    def generate(self, flowable_list: List):
+        flowable_list.append(RL_PageBreak())
+
+
+@dataclass
 class PDF(PDFObject):
-    """Container class to organize all PDF objects into one stucture"""
+    """Container class to organize all PDF objects into one structure"""
     key = 'pdf'
 
     sheet: Sheet = field(default=Sheet())
@@ -256,7 +272,7 @@ class PDF(PDFObject):
                 result.sheet = Sheet.from_yaml(value)
 
             elif key == 'content':
-                assert isinstance(value, list) # content must be a list of dicts
+                assert isinstance(value, list)  # content must be a list of dicts
 
                 for dictionary in value:
 
@@ -289,6 +305,32 @@ class PDF(PDFObject):
 
                     # endregion
 
+                    # region Page Break
+
+                    try:
+                        dictionary[PageBreak.key]
+
+                    except KeyError:
+                        pass
+
+                    else:
+                        result.content.append(PageBreak())
+
+                    # endregion
+
                     logging.warning(f"Invalid yaml element: {dictionary}")
 
         return result
+
+    def generate(self) -> List:
+        Paragraph.font = self.sheet.font
+        Table.font = self.sheet.font
+
+        content = []
+
+        for element in self.content:
+            assert isinstance(element, Renderable)
+
+            element.generate(content)
+
+        return content
