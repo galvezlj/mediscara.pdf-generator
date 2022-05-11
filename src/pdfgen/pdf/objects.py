@@ -2,6 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
+from os import path
 from typing import ClassVar, List, Tuple
 
 from reportlab.lib import colors
@@ -151,7 +152,7 @@ class Table(Renderable):
 
     @dataclass
     class Row:
-        text: str = field(default='')
+        resource: str = field(default='')
 
     rows: List[List[str]] = field(default_factory=list)
 
@@ -170,7 +171,17 @@ class Table(Renderable):
             r = list()
             for col in cols:
                 assert isinstance(col, dict)
-                r.append(col.get('text'))
+                resource = col.get('text')
+
+                if resource is not None:
+                    r.append(resource)
+                    continue
+
+                resource = col.get(Image.key)
+
+                if resource is not None:
+                    assert isinstance(resource, dict)
+                    Image.from_yaml(resource).generate(r)
 
             result.rows.append(r)
 
