@@ -2,7 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import ClassVar, List
+from typing import ClassVar, List, Tuple
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
@@ -18,21 +18,25 @@ from dacite import from_dict
 
 @dataclass
 class PDFObject(ABC):
+    """Base class of every object on a pdf page"""
     key: ClassVar[str]
 
     class Alignment(Enum):
+        """Enum class storing information abount horizontal alignment"""
         LEFT = 'left'
         RIGHT = 'right'
         CENTER = 'center'
 
     @classmethod
     @abstractmethod
-    def from_yaml(cls, yaml_file: dict):
+    def from_yaml(cls, yaml_like: dict):
+        """Attempts to load the object from a yaml-like structured dictionary object"""
         pass
 
 
 @dataclass
 class Margin(PDFObject):
+    """This class stores the global margins on a page"""
     key = 'margin'
 
     left: int = field(default=16)
@@ -41,28 +45,31 @@ class Margin(PDFObject):
     bottom: int = field(default=16)
 
     @classmethod
-    def from_yaml(cls, yaml_file: dict):
+    def from_yaml(cls, yaml_like: dict):
         pass
 
 
 @dataclass
 class Sheet(PDFObject):
+    """This class describes the sheet properties of a pdf document"""
+    key = 'sheet'
+
     class Size(Enum):
+        """Enum class for masking the actual reportlab values to a readable value"""
         A4 = RL_A4
         A3 = RL_A3
         A2 = RL_A2
-
-    key = 'sheet'
 
     margin: Margin = field(default=Margin())
     size: str = field(default='A4')
 
     @classmethod
-    def from_yaml(cls, yaml_file: dict):
-        return from_dict(data_class=cls, data=yaml_file)
+    def from_yaml(cls, yaml_like: dict):
+        return from_dict(data_class=cls, data=yaml_like)
 
     @property
-    def size_tuple(self):
+    def size_tuple(self) -> Tuple[float, float]:
+        """Returns the raw size value as a tuple of floats"""
         for element in Sheet.Size:
             if element.name == self.size:
                 return element.value
@@ -70,14 +77,17 @@ class Sheet(PDFObject):
 
 @dataclass
 class Renderable(PDFObject, ABC):
+    """Base class for all renderable PDF objects"""
 
     @abstractmethod
     def generate(self, flowable_list: List):
+        """Appends the object as a flowable to the page's flowable list"""
         pass
 
 
 @dataclass
 class Paragraph(Renderable):
+    """A paragraph is a simple PDF element that stores text"""
     key = 'paragraph'
 
     alignment: str = field(default=PDFObject.Alignment.LEFT.value)
@@ -88,11 +98,11 @@ class Paragraph(Renderable):
     text: str = field(default="")
 
     def __post_init__(self):
-        self.space_before = self.size // 3
+        self.space_before = self.size // 3  # set default margins
 
     @classmethod
-    def from_yaml(cls, yaml_file: dict):
-        return from_dict(data_class=cls, data=yaml_file)
+    def from_yaml(cls, yaml_like: dict):
+        return from_dict(data_class=cls, data=yaml_like)
 
     def generate(self, flowable_list: List):
         # create the paragraph style
@@ -119,6 +129,7 @@ class Paragraph(Renderable):
 
 @dataclass
 class Table(Renderable):
+    """"""
     key = 'table'
 
     @dataclass
@@ -128,8 +139,8 @@ class Table(Renderable):
     rows: List[List[str]] = field(default_factory=list)
 
     @classmethod
-    def from_yaml(cls, yaml_file: dict):
-        rows = yaml_file.get('rows')
+    def from_yaml(cls, yaml_like: dict):
+        rows = yaml_like.get('rows')
 
         assert isinstance(rows, list)
 
@@ -160,6 +171,7 @@ class Table(Renderable):
 
 @dataclass
 class PDF(PDFObject):
+    """Container class to organize all PDF objects into one stucture"""
     key = 'pdf'
 
     sheet: Sheet = field(default=Sheet())
@@ -167,8 +179,8 @@ class PDF(PDFObject):
     content: List = field(default_factory=list)
 
     @classmethod
-    def from_yaml(cls, yaml_file: dict):
-        root = yaml_file.get(cls.key)
+    def from_yaml(cls, yaml_like: dict):
+        root = yaml_like.get(cls.key)
 
         if root is None:
             logging.error(f"The root element should be '{cls.key}' in the spec file")
@@ -178,11 +190,16 @@ class PDF(PDFObject):
 
         assert isinstance(root, dict)
         for key, value in root.items():
+            # retrieve the keys
+            # there should be only
+            #   - sheet
+            #   - content
+            #
             if key == cls.sheet.key:
                 result.sheet = Sheet.from_yaml(value)
 
             elif key == 'content':
-                assert isinstance(value, list)
+                assert isinstance(value, list) # content must be a list of dicts
 
                 for dictionary in value:
 
