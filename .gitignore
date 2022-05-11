@@ -1,2 +1,3 @@
 tests/yaml/*
 tests/generated/*
+tests/resources/*

@@ -10,8 +10,10 @@ from reportlab.lib.pagesizes import A4 as RL_A4
 from reportlab.lib.pagesizes import A3 as RL_A3
 from reportlab.lib.pagesizes import A2 as RL_A2
 from reportlab.lib.styles import ParagraphStyle
-from reportlab.platypus import Paragraph as RL_Paragraph, TableStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import Paragraph as RL_Paragraph, TableStyle, Spacer
 from reportlab.platypus import Table as RL_Table
+from reportlab.platypus import Image as RL_Image
 
 from dacite import from_dict
 
@@ -78,11 +80,28 @@ class Sheet(PDFObject):
 @dataclass
 class Renderable(PDFObject, ABC):
     """Base class for all renderable PDF objects"""
+    
+    space_before: int = field(default=0)
+    space_after: int = field(default=0)
 
     @abstractmethod
     def generate(self, flowable_list: List):
         """Appends the object as a flowable to the page's flowable list"""
         pass
+
+    @classmethod
+    def get_with_spacing(cls, yaml_like: dict):
+        result = cls()
+        sp_before = yaml_like.get('space_before')
+        sp_after = yaml_like.get("space_after")
+
+        if sp_before is not None:
+            result.space_before = sp_before
+
+        if sp_after is not None:
+            result.space_after = sp_after
+
+        return result
 
 
 @dataclass
@@ -92,8 +111,6 @@ class Paragraph(Renderable):
 
     alignment: str = field(default=PDFObject.Alignment.LEFT.value)
     size: int = field(default=12)
-    space_before: int = field(init=False)
-    space_after: int = field(default=0)
 
     text: str = field(default="")
 
@@ -140,11 +157,11 @@ class Table(Renderable):
 
     @classmethod
     def from_yaml(cls, yaml_like: dict):
+        result = cls.get_with_spacing(yaml_like)
+
         rows = yaml_like.get('rows')
 
         assert isinstance(rows, list)
-
-        result = cls()
 
         for row in rows:
             assert isinstance(row, dict)
@@ -160,6 +177,9 @@ class Table(Renderable):
         return result
 
     def generate(self, flowable_list: List):
+        spacer = Spacer(width=10*inch, height=self.space_before)
+        flowable_list.append(spacer)
+
         t = RL_Table(self.rows)
 
         t.setStyle(TableStyle(
@@ -167,6 +187,33 @@ class Table(Renderable):
         ))
 
         flowable_list.append(t)
+
+
+@dataclass
+class Image(Renderable):
+    """Class to store and display images"""
+    key = 'image'
+
+    resource: str = field(default="")
+    alignment: str = field(default=PDFObject.Alignment.LEFT.value)
+    width: int = field(default=1*inch)
+    height: int = field(default=1*inch)
+    
+    def __post_init__(self):
+        self.space_before = self.height // 3
+
+    @classmethod
+    def from_yaml(cls, yaml_like: dict):
+        return from_dict(data_class=cls, data=yaml_like)
+
+    def generate(self, flowable_list: List):
+        spacer = Spacer(width=0, height=self.space_before)
+        flowable_list.append(spacer)
+
+        img = RL_Image(self.resource, self.width, self.height)
+        img.hAlign = self.alignment.upper()
+
+        flowable_list.append(img)
 
 
 @dataclass
@@ -218,6 +265,16 @@ class PDF(PDFObject):
 
                     if element is not None:
                         result.content.append(Table.from_yaml(element))
+                        continue
+
+                    # endregion
+
+                    # region Image
+
+                    element = dictionary.get(Image.key)
+
+                    if element is not None:
+                        result.content.append(Image.from_yaml(element))
                         continue
 
                     # endregion
