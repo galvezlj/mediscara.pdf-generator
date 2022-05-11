@@ -90,20 +90,6 @@ class Renderable(PDFObject, ABC):
         """Appends the object as a flowable to the page's flowable list"""
         pass
 
-    @classmethod
-    def get_with_spacing(cls, yaml_like: dict):
-        result = cls()
-        sp_before = yaml_like.get('space_before')
-        sp_after = yaml_like.get("space_after")
-
-        if sp_before is not None:
-            result.space_before = sp_before
-
-        if sp_after is not None:
-            result.space_after = sp_after
-
-        return result
-
 
 @dataclass
 class Paragraph(Renderable):
@@ -154,11 +140,23 @@ class Table(Renderable):
     class Row:
         resource: str = field(default='')
 
+    border: bool = field(default=False)
     rows: List[List[str]] = field(default_factory=list)
 
     @classmethod
     def from_yaml(cls, yaml_like: dict):
-        result = cls.get_with_spacing(yaml_like)
+        result = cls()
+
+        sp_before = yaml_like.get('space_before')
+        sp_after = yaml_like.get("space_after")
+
+        if sp_before is not None:
+            result.space_before = sp_before
+
+        if sp_after is not None:
+            result.space_after = sp_after
+
+        result.border = yaml_like.get('border')
 
         rows = yaml_like.get('rows')
 
@@ -193,9 +191,10 @@ class Table(Renderable):
 
         t = RL_Table(self.rows)
 
-        t.setStyle(TableStyle(
-            [('BOX', (0, 0), (-1, -1), 0.25, colors.black)]
-        ))
+        if self.border:
+            t.setStyle(TableStyle(
+                [('BOX', (0, 0), (-1, -1), 0.25, colors.black)]
+            ))
 
         flowable_list.append(t)
 
