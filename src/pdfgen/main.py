@@ -1,4 +1,5 @@
-import _io
+"""Main module of the package"""
+
 import argparse
 import logging
 import sys
@@ -14,6 +15,7 @@ OUTPUT_FILE = "output_file"
 
 
 def parse_args(args):
+    """Parses the command line arguments"""
     arg_parser = argparse.ArgumentParser(description="This script generates a PDF document based on a .yaml file")
 
     # version
@@ -35,8 +37,9 @@ def parse_args(args):
     return arg_parser.parse_args(args)
 
 
-def main():
-    opts = vars(parse_args(sys.argv[1:]))
+def main(args):
+    """Main entry point of the package"""
+    opts = vars(parse_args(args))
 
     input_file = opts.get(INPUT_FILE)
     output_file = opts.get(OUTPUT_FILE)
@@ -55,4 +58,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    main(sys.argv)

@@ -1,3 +1,7 @@
+.idea
 tests/yaml/*
 tests/generated/*
 tests/resources/*
+
+/**/__pycache__
+/**/*.egg-info
