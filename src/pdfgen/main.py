@@ -46,7 +46,7 @@ def generate(input_file: str or io.TextIOWrapper, output_file: str):
         logging.info("Document successfully rendered")
 
 
-def main(args):
+def main(args=None):
     """Main entry point of the package"""
     opts = vars(parse_args(args))
 
