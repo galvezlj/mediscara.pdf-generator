@@ -6,6 +6,8 @@ import sys
 from argparse import FileType
 from os import path
 
+import io
+
 from . import __version__
 from .yaml import parse
 from .renderer import render
@@ -45,9 +47,9 @@ def main(args):
     output_file = opts.get(OUTPUT_FILE)
 
     if output_file is None:
-        assert isinstance(input_file, _io.TextIOWrapper)
+        assert isinstance(input_file, io.TextIOWrapper)
 
-        directory, name = path.split(input_file.name)
+        directory, _ = path.split(input_file.name)
 
         output_file = f"{directory}/generated.pdf"
 
