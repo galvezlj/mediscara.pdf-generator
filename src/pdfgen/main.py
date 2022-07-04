@@ -38,6 +38,13 @@ def parse_args(args):
 
     return arg_parser.parse_args(args)
 
+def generate(input_file: str or io.TextIOWrapper, output_file: str):
+    """Generate the PDF document"""
+    logging.info("Generating file '%s'", output_file)
+    pdf = parse(input_file)
+    if render(output_file, pdf):
+        logging.info("Document successfully rendered")
+
 
 def main(args):
     """Main entry point of the package"""
@@ -53,10 +60,7 @@ def main(args):
 
         output_file = f"{directory}/generated.pdf"
 
-    logging.info("Generating file '%s'", output_file)
-    pdf = parse(input_file)
-    if render(output_file, pdf):
-        logging.info("Document successfully rendered")
+    generate(input_file, output_file)
 
 
 if __name__ == '__main__':
