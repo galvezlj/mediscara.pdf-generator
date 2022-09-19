@@ -22,25 +22,27 @@ from reportlab.platypus import Table as RL_Table
 @dataclass
 class PDFObject(ABC):
     """Base class of every object on a pdf page"""
+
     key: ClassVar[str]
 
     class Alignment(Enum):
         """Enum class storing information about horizontal alignment"""
-        LEFT = 'left'
-        RIGHT = 'right'
-        CENTER = 'center'
+
+        LEFT = "left"
+        RIGHT = "right"
+        CENTER = "center"
 
     @classmethod
     @abstractmethod
     def from_yaml(cls, yaml_like: dict):
         """Attempts to load the object from a yaml-like structured dictionary object"""
-        pass
 
 
 @dataclass
 class Margin(PDFObject):
     """This class stores the global margins on a page"""
-    key = 'margin'
+
+    key = "margin"
 
     left: int = field(default=16)
     right: int = field(default=16)
@@ -55,17 +57,19 @@ class Margin(PDFObject):
 @dataclass
 class Sheet(PDFObject):
     """This class describes the sheet properties of a pdf document"""
-    key = 'sheet'
+
+    key = "sheet"
 
     class Size(Enum):
         """Enum class for masking the actual reportlab values to a readable value"""
+
         A4 = RL_A4
         A3 = RL_A3
         A2 = RL_A2
 
     margin: Margin = field(default=Margin())
-    size: str = field(default='A4')
-    font: str = field(default='Times-Roman')
+    size: str = field(default="A4")
+    font: str = field(default="Times-Roman")
 
     @classmethod
     def from_yaml(cls, yaml_like: dict):
@@ -78,17 +82,24 @@ class Sheet(PDFObject):
             if element.name == self.size:
                 return element.value
 
+        return -1, -1
+
 
 @dataclass
 class Renderable(PDFObject, ABC):
     """Base class for all renderable PDF objects"""
 
     parent: PDFObject = field(default=None)
-    
+
     space_before: int = field(default=4)
     space_after: int = field(default=4)
 
     def render(self, flowable_list: List):
+        """This method renders the contents of the list
+
+        Args:
+            flowable_list (List): The list of flowables to append itself to
+        """
         if isinstance(self.parent, PDF):
             flowable_list.append(Spacer(width=0, height=self.space_before))
 
@@ -102,13 +113,13 @@ class Renderable(PDFObject, ABC):
     @abstractmethod
     def generate(self, flowable_list: List):
         """Appends the object as a flowable to the page's flowable list"""
-        pass
 
 
 @dataclass
 class Paragraph(Renderable):
     """A paragraph is a simple PDF element that stores text"""
-    key = 'paragraph'
+
+    key = "paragraph"
 
     font: ClassVar[str] = field(default="Times-Roman")
 
@@ -126,11 +137,12 @@ class Paragraph(Renderable):
 
     def generate(self, flowable_list: List):
         # create the paragraph style
-        style = ParagraphStyle(name=self.alignment,
-                               alignment=self.rl_alignment,
-                               fontSize=self.size,
-                               fontName=Paragraph.font
-                               )
+        style = ParagraphStyle(
+            name=self.alignment,
+            alignment=self.rl_alignment,
+            fontSize=self.size,
+            fontName=Paragraph.font,
+        )
         flowable_list.append(RL_Paragraph(self.text, style))
 
     @property
@@ -148,17 +160,22 @@ class Paragraph(Renderable):
 
 @dataclass
 class Table(Renderable):
-    """"""
-    key = 'table'
+    """Class to define a table"""
+
+    key = "table"
     font: ClassVar[str] = field(default="Times-Roman")
 
     @dataclass
     class Row:
-        resource: str = field(default='')
+        """Class to define a row in the table"""
+
+        resource: str = field(default="")
 
     @dataclass
     class Cell(PDFObject):
-        key = 'cell'
+        """Class to define a sigle cell in the table"""
+
+        key = "cell"
 
         text: str = field(default="")
         background_color: str = field(default="0xFFFFFF")
@@ -177,16 +194,16 @@ class Table(Renderable):
         result = from_dict(data_class=cls, data=yaml_like)  # get the non-nested fields
         result.rows = []  # override rows
 
-        rows = yaml_like.get('rows')
+        rows = yaml_like.get("rows")
 
         assert isinstance(rows, list)
 
         for row in rows:  # get the dictionary of a row
             assert isinstance(row, dict)
-            cols = row.get('row')  # get the list of dictionaries from the row
+            cols = row.get("row")  # get the list of dictionaries from the row
 
             assert isinstance(cols, list)
-            r = list()
+            row = []
 
             for col in cols:
                 assert isinstance(col, dict)
@@ -195,7 +212,7 @@ class Table(Renderable):
                 if resource is not None:
                     cell = Table.Cell.from_yaml(resource)
                     cell.parent = result
-                    r.append(cell)
+                    row.append(cell)
                     continue
 
                 resource = col.get(Image.key)
@@ -204,20 +221,20 @@ class Table(Renderable):
                     assert isinstance(resource, dict)
                     img = Image.from_yaml(resource)
                     img.parent = result
-                    img.generate(r)
+                    img.generate(row)
                     continue
 
-            result.rows.append(r)
+            result.rows.append(row)
 
         return result
 
     def generate(self, flowable_list: List):
-        table_data = list()
-        background_colors = list()
+        table_data = []
+        background_colors = []
 
         for i, row in enumerate(self.rows):
-            background_colors.append(list())
-            table_data.append(list())
+            background_colors.append([])
+            table_data.append([])
             for cell in row:
                 if isinstance(cell, Table.Cell):
                     background_colors[i].append(cell.background_color)
@@ -226,7 +243,7 @@ class Table(Renderable):
                 else:
                     table_data[i].append(cell)
 
-        t = RL_Table(table_data)
+        table = RL_Table(table_data)
 
         style_args = [("FONTNAME", (0, 0), (-1, -1), self.font)]
 
@@ -237,29 +254,34 @@ class Table(Renderable):
                     style_args.append(("BACKGROUND", (j, i), (j, i), HexColor(color)))
 
         if self.header:
-            style_args.append(("LINEBELOW", (0, 0), (-1, 0), 1, colors.black))  # add a line below the first row
-            style_args.append(("BACKGROUND", (0, 0), (-1, -0), colors.lightgrey))  # add grey background
+            style_args.append(
+                ("LINEBELOW", (0, 0), (-1, 0), 1, colors.black)
+            )  # add a line below the first row
+            style_args.append(
+                ("BACKGROUND", (0, 0), (-1, -0), colors.lightgrey)
+            )  # add grey background
 
         if self.grid:
             style_args.append(("GRID", (0, 0), (-1, -1), 0.25, colors.grey))
 
         if self.border:
-            style_args.append(('BOX', (0, 0), (-1, -1), 0.5, colors.black))
+            style_args.append(("BOX", (0, 0), (-1, -1), 0.5, colors.black))
 
-        t.setStyle(style_args)
+        table.setStyle(style_args)
 
-        flowable_list.append(t)
+        flowable_list.append(table)
 
 
 @dataclass
 class Image(Renderable):
     """Class to store and display images"""
-    key = 'image'
+
+    key = "image"
 
     resource: str = field(default="")
     alignment: str = field(default=PDFObject.Alignment.LEFT.value)
-    width: int = field(default=1*inch)
-    height: int = field(default=1*inch)
+    width: int = field(default=1 * inch)
+    height: int = field(default=1 * inch)
 
     @classmethod
     def from_yaml(cls, yaml_like: dict):
@@ -274,7 +296,9 @@ class Image(Renderable):
 
 @dataclass
 class PageBreak(Renderable):
-    key = 'page_break'
+    """Class to define a page break in the document"""
+
+    key = "page_break"
 
     @classmethod
     def from_yaml(cls, yaml_like: dict):
@@ -287,7 +311,8 @@ class PageBreak(Renderable):
 @dataclass
 class PDF(PDFObject):
     """Container class to organize all PDF objects into one structure"""
-    key = 'pdf'
+
+    key = "pdf"
 
     sheet: Sheet = field(default=Sheet())
 
@@ -298,7 +323,7 @@ class PDF(PDFObject):
         root = yaml_like.get(cls.key)
 
         if root is None:
-            logging.error(f"The root element should be '{cls.key}' in the spec file")
+            logging.error("The root element should be '%s' in the spec file", cls.key)
             return None
 
         result = cls()
@@ -313,7 +338,7 @@ class PDF(PDFObject):
             if key == cls.sheet.key:
                 result.sheet = Sheet.from_yaml(value)
 
-            elif key == 'content':
+            elif key == "content":
                 assert isinstance(value, list)  # content must be a list of dicts
 
                 for dictionary in value:
@@ -322,9 +347,9 @@ class PDF(PDFObject):
                     element = dictionary.get(Paragraph.key)
 
                     if element is not None:
-                        p = Paragraph.from_yaml(element)
-                        p.parent = result
-                        result.content.append(p)
+                        para = Paragraph.from_yaml(element)
+                        para.parent = result
+                        result.content.append(para)
                         continue
 
                     # endregion
@@ -334,9 +359,9 @@ class PDF(PDFObject):
                     element = dictionary.get(Table.key)
 
                     if element is not None:
-                        t = Table.from_yaml(element)
-                        t.parent = result
-                        result.content.append(t)
+                        table = Table.from_yaml(element)
+                        table.parent = result
+                        result.content.append(table)
                         continue
 
                     # endregion
@@ -366,11 +391,12 @@ class PDF(PDFObject):
 
                     # endregion
 
-                    logging.warning(f"Invalid yaml element: {dictionary}")
+                    logging.warning("Invalid yaml element: %s", dictionary)
 
         return result
 
     def render(self) -> List:
+        """Renders the contents of the PDF object"""
         Paragraph.font = self.sheet.font
         Table.font = self.sheet.font
 
