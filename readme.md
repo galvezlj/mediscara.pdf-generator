@@ -7,7 +7,7 @@ This is a simple script that generates PDF documents based on a yaml specificati
 Currently, these objects are supported:
 - [x] Paragraph (text)
 - [x] Table
-- [ ] Image
+- [x] Image
 
 All of the object listed support the the alignment attribute.
 This can be used to align the element horizontally.
