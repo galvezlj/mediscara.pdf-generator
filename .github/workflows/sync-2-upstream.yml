@@ -1,5 +1,9 @@
 name: Sync to Upstream
 
+permissions:
+  actions: write
+  contents: write 
+
 on:
   schedule:
     - cron:  '0 7 * * 1,4'
